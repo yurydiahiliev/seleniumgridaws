@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Selenium Grid Setup on AWS with separate Spot Fleets for Hub and Nodes
+
+Resources:
+  SeleniumSecurityGroupName:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Your Security Group Description
+      VpcId: vpc-05322bf757c9b2f06
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 4444
+          ToPort: 4444
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5555
+          ToPort: 5555
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 4442
+          ToPort: 4442
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 4443
+          ToPort: 4443
+          CidrIp: 0.0.0.0/0
+
+  SeleniumHubSpotFleetRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - spotfleet.amazonaws.com
+                - ec2.amazonaws.com 
+            Action: 
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'SeleniumHubSpotFleetPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 
+                  - 'ec2:*'
+                  - 'iam:PassRole'
+                  - 'ssm:PutParameter'
+                  - 'ssm:GetParameter'
+                  - 'ssm:DeleteParameter'
+                  - 'cloudformation:DescribeStacks'
+                Resource: '*'
+
+  SeleniumHubInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Roles: 
+        - !Ref SeleniumHubSpotFleetRole              
+
+  SeleniumHubSpotFleet:
+    Type: 'AWS::EC2::SpotFleet'
+    Properties:
+      SpotFleetRequestConfigData:
+        IamFleetRole: !GetAtt SeleniumHubSpotFleetRole.Arn
+        TargetCapacity: 1
+        AllocationStrategy: 'lowestPrice'
+        SpotPrice: '0.5'
+        LaunchSpecifications:
+          - ImageId: ami-b70554c8
+            InstanceType: t2.micro
+            KeyName: test
+            Placement:
+              AvailabilityZone: "us-east-1a"
+            SecurityGroups:
+              - GroupId: !GetAtt SeleniumSecurityGroupName.GroupId
+            TagSpecifications:
+              - ResourceType: 'instance'
+                Tags:
+                  - Key: Name
+                    Value: !Join ["-", ["selenium-hub-spot", !Select [2, !Split ["/", !Ref AWS::StackId]]]]      
+            IamInstanceProfile:
+              Arn: !GetAtt SeleniumHubInstanceProfile.Arn  
+            UserData:
+              Fn::Base64: |
+                #!/bin/bash
+                yum update -y
+                yum install -y aws-cli docker
+                service docker start
+                usermod -a -G docker ec2-user
+
+                 # Fetch Public IP of the Hub instance
+                HUB_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
+
+                STACK_NAME="seleniumgridaws"
+                STACK_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackId' --region "us-east-1" --output text)
+                STACK_ID=$(echo "$STACK_ARN" | awk -F'/' '{print $NF}')
+
+                # Store the IP in SSM Parameter Store
+                aws ssm put-parameter --name "SeleniumHubPublicIP-$STACK_ID" --type "String" --value "$HUB_IP" --region "us-east-1" --overwrite
+
+                curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+
+                # Prepare Docker Compose for Selenium Hub
+                mkdir -p /opt/selenium
+                cat <<EOF > /opt/selenium/docker-compose.yml
+                version: '3'
+                services:
+                  selenium-hub:
+                    image: selenium/hub:latest
+                    container_name: selenium-hub
+                    ports:
+                      - "4442:4442"
+                      - "4443:4443"
+                      - "4444:4444"
+                EOF
+
+                # Start Docker Compose
+                cd /opt/selenium
+                docker-compose up -d
+
+  SeleniumNodesSpotFleetRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - spotfleet.amazonaws.com
+                - ec2.amazonaws.com
+            Action: 
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'SeleniumNodesSpotFleetPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 
+                  - 'ec2:*'
+                  - 'iam:PassRole'
+                  - 'ssm:GetParameter'
+                  - 'ssm:DeleteParameter'
+                  - 'cloudformation:DescribeStacks'
+                Resource: '*'
+
+  SeleniumNodesInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Roles: 
+        - !Ref SeleniumNodesSpotFleetRole              
+
+  SeleniumNodesSpotFleet:
+    Type: 'AWS::EC2::SpotFleet'
+    Properties:
+      SpotFleetRequestConfigData:
+        IamFleetRole: !GetAtt SeleniumNodesSpotFleetRole.Arn
+        TargetCapacity: 2  # Adjust the number of nodes as needed
+        AllocationStrategy: 'lowestPrice'
+        SpotPrice: '0.5'
+        LaunchSpecifications:
+          - ImageId: ami-b70554c8
+            InstanceType: t2.micro
+            KeyName: test
+            Placement:
+              AvailabilityZone: "us-east-1a"
+            SecurityGroups:
+              - GroupId: !GetAtt SeleniumSecurityGroupName.GroupId
+            TagSpecifications:
+              - ResourceType: 'instance'
+                Tags:
+                  - Key: Name
+                    Value: !Join ["-", ["selenium-node-spot", !Select [2, !Split ["/", !Ref AWS::StackId]]]]     
+            IamInstanceProfile:
+              Arn: !GetAtt SeleniumNodesInstanceProfile.Arn  
+            UserData:
+              Fn::Base64: |
+                #!/bin/bash
+                yum update -y
+                yum install -y aws-cli docker
+                service docker start
+                usermod -a -G docker ec2-user
+
+                curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+
+                NODE_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
+
+                sleep 30
+
+                STACK_NAME="seleniumgridaws"
+                STACK_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackId' --region "us-east-1" --output text)
+                STACK_ID=$(echo "$STACK_ARN" | awk -F'/' '{print $NF}')
+
+                RECEIVED_HUB_IP=$(aws ssm get-parameter --name "SeleniumHubPublicIP-$STACK_ID" --query "Parameter.Value" --region "us-east-1" --output text)
+                FORMATTED_HUB_IP="http://$RECEIVED_HUB_IP:4444"
+
+                # Prepare Docker Compose for Selenium Nodes
+                mkdir -p /opt/selenium
+                cat <<EOF > /opt/selenium/docker-compose.yml
+                version: '3'
+                services:
+                  chrome-node:
+                    image: selenium/node-chrome:latest
+                    ports:
+                      - "5555:5555"
+                    environment:
+                      - SE_EVENT_BUS_HOST=${RECEIVED_HUB_IP}
+                      - SE_NODE_GRID_URL=${FORMATTED_HUB_IP}
+                      - SE_EVENT_BUS_PUBLISH_PORT=4442
+                      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+                      - SE_NODE_MAX_INSTANCES=1
+                      - SE_NODE_MAX_SESSIONS=1
+                      - SE_NODE_SESSION_TIMEOUT=180
+                      - SE_VNC_NO_PASSWORD=1
+                      - SE_NODE_HOST=${NODE_IP}
+                EOF
+
+                # Start Docker Compose
+                cd /opt/selenium
+                docker-compose up -d
+
+Outputs:
+  SeleniumHubSpotFleetRoleId:
+    Description: The ID of the Spot Fleet Role for Selenium Hub
+    Value: !GetAtt SeleniumHubSpotFleetRole.Arn
+  SeleniumNodesSpotFleetRoleId:
+    Description: The ID of the Spot Fleet Role for Selenium Nodes
+    Value: !GetAtt SeleniumNodesSpotFleetRole.Arn
+  SeleniumHubURL:
+    Description: "URL for Selenium Hub"
+    Value: !Sub
+      - "http://${HubIP}:4444"
+      - HubIP: !GetAtt [SeleniumHubSpotFleet, Instances[0].PublicIp]  
