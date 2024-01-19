@@ -228,6 +228,8 @@ Resources:
                 cd /opt/selenium
                 docker-compose up -d
 
+                aws ssm delete-parameter --name "SeleniumHubPublicIP-$STACK_ID" --region "us-east-1"
+
 Outputs:
   SeleniumHubSpotFleetRoleId:
     Description: The ID of the Spot Fleet Role for Selenium Hub
@@ -235,8 +237,3 @@ Outputs:
   SeleniumNodesSpotFleetRoleId:
     Description: The ID of the Spot Fleet Role for Selenium Nodes
     Value: !GetAtt SeleniumNodesSpotFleetRole.Arn
-  SeleniumHubURL:
-    Description: "URL for Selenium Hub"
-    Value: !Sub
-      - "http://${HubIP}:4444"
-      - HubIP: !GetAtt [SeleniumHubSpotFleet, Instances[0].PublicIp]  
