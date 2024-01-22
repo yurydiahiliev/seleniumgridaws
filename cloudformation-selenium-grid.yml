@@ -200,14 +200,11 @@ Resources:
                 -e SE_EVENT_BUS_SUBSCRIBE_PORT=4443 \
                 -e SE_NODE_MAX_INSTANCES=1 \
                 -e SE_NODE_MAX_SESSIONS=4 \
+                -e SE_NODE_OVERRIDE_MAX_SESSIONS=true \
                 -e SE_NODE_SESSION_TIMEOUT=60 \
                 -e SE_VNC_NO_PASSWORD=1 \
                 -e SE_NODE_HOST=$NODE_IP \
                 selenium/node-chrome:latest
-
-                sleep 30
-
-                aws ssm delete-parameter --name "SeleniumHubPublicIP-$STACK_ID" --region "us-east-1"
 
 Outputs:
   SeleniumHubSpotFleetRoleId:
