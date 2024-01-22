@@ -1,0 +1,18 @@
+[
+    {
+        "ParameterKey": "AvailabilityZoneGeneral",
+        "ParameterValue": "us-east-1"
+    },
+    {
+        "ParameterKey": "AvailabilityZoneFull",
+        "ParameterValue": "us-east-1a"
+    },
+    {
+        "ParameterKey": "VpcId",
+        "ParameterValue": "vpc-05322bf757c9b2f06"
+    },
+    {
+        "ParameterKey": "KeyName",
+        "ParameterValue": "test"
+    }
+]
