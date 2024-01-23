@@ -25,6 +25,7 @@ First, configure your AWS account with `aws-cli`. This is necessary for running 
 
   ```bash
   sh create_stack.sh
+  ```
 
 
 Avarage time for creation ~ 5-6 min
@@ -36,6 +37,7 @@ To delete the AWS Stack and all associated resources, use the following command:
 
   ```bash
   sh clean_up_stack.sh
+  ```
 
 
    
