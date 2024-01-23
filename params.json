@@ -1,5 +1,13 @@
 [
     {
+        "ParameterKey": "VpcId",
+        "ParameterValue": "vpc-05322bf757c9b2f06"
+    },
+    {
+        "ParameterKey": "KeyName",
+        "ParameterValue": "test"
+    },
+    {
         "ParameterKey": "AvailabilityZoneGeneral",
         "ParameterValue": "us-east-1"
     },
@@ -8,11 +16,47 @@
         "ParameterValue": "us-east-1a"
     },
     {
-        "ParameterKey": "VpcId",
-        "ParameterValue": "vpc-05322bf757c9b2f06"
+        "ParameterKey": "SeleniumHubInstanceImageId",
+        "ParameterValue": "ami-b70554c8"
     },
     {
-        "ParameterKey": "KeyName",
-        "ParameterValue": "test"
+        "ParameterKey": "SeleniumNodeImageId",
+        "ParameterValue": "ami-b70554c8"
+    },
+    {
+        "ParameterKey": "SeleniumHubInstanceType",
+        "ParameterValue": "t2.micro"
+    },
+    {
+        "ParameterKey": "SeleniumNodeInstanceType",
+        "ParameterValue": "t2.micro"
+    },
+    {
+        "ParameterKey": "SpotPrice",
+        "ParameterValue": "0.5"
+    },
+    {
+        "ParameterKey": "ShmSizeSeleniumHub",
+        "ParameterValue": "2g"
+    },
+    {
+        "ParameterKey": "ShmSizeSeleniumNode",
+        "ParameterValue": "2g"
+    },
+    {
+        "ParameterKey": "NodeChromeVersion",
+        "ParameterValue": "latest"
+    },
+    {
+        "ParameterKey": "NodeFleetCapacity",
+        "ParameterValue": "5"
+    },
+    {
+        "ParameterKey": "MaxNodeInstances",
+        "ParameterValue": "1"
+    },
+    {
+        "ParameterKey": "MaxNodeSessions",
+        "ParameterValue": "1"
     }
 ]

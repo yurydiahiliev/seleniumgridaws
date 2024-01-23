@@ -8,7 +8,8 @@ echo "Starting to create AWS CloudFormation Stack: ${STACK_NAME}"
 aws cloudformation create-stack \
     --template-body file://cloudformation-selenium-grid.yml \
     --stack-name $STACK_NAME \
-    --capabilities CAPABILITY_NAMED_IAM
+    --capabilities CAPABILITY_NAMED_IAM \
+    --parameters file://params.json
 
 echo "Waiting for [$STACK_NAME] stack creation..."
 

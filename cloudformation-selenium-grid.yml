@@ -1,12 +1,80 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Selenium Grid Setup on AWS with separate Spot Fleets for Hub and Nodes
 
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    AllowedPattern: '.+'
+    ConstraintDescription: Vpc Id parameter can't be empty
+  KeyName:
+    Type: String
+    Default: ''
+    Description: Key Pair name fo ssh acces to instances
+  AvailabilityZoneFull:
+    Type: AWS::EC2::AvailabilityZone::Name
+    AllowedPattern: '.+'
+    ConstraintDescription: Availability Zone parameter can't be empty    
+  AvailabilityZoneGeneral:
+    Default: 'us-east-1'
+    Type: String
+    ConstraintDescription: Availability Zone parameter can't be empty
+  SeleniumHubInstanceImageId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-b70554c8
+    Description: Choose image id, default - Amazon Linux
+  SeleniumNodeImageId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-b70554c8
+    Description: Choose image id, default - Amazon Linux      
+  SeleniumHubInstanceType:
+    Type: String
+    Default: t2.micro
+    Description: Choose Selenium Hub instance type
+  SeleniumNodeInstanceType:
+    Type: String
+    Default: t2.micro
+    Description: Choose Selenium Chrome Node instance type
+  SpotPrice:
+    Type: String
+    Default: '0.5'
+    Description: Choose Selenium Chrome Node instance type
+  ShmSizeSeleniumHub:
+    Type: String
+    Default: 2g
+    Description: Tmpfs size for Selenium Hub  
+  ShmSizeSeleniumNode:
+    Type: String
+    Default: 2g
+    Description: Tmpfs size for Selenium Chrome Node
+  NodeChromeVersion:
+    Type: String
+    Default: latest
+    Description: Use latest Chrome or specify version from https://hub.docker.com/r/selenium/node-chrome/tags
+  NodeFleetCapacity:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: AWS Spot Fleet capacity  
+  MaxNodeInstances:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Choose Selenium Chrome Node instance type
+  MaxNodeSessions:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Choose Selenium Chrome Node instance type 
+
+Conditions:                          
+  KeySpecified: !Not [ !Equals [ !Ref KeyName, "" ]]
+
 Resources:
   SeleniumSecurityGroupName:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Your Security Group Description
-      VpcId: vpc-05322bf757c9b2f06
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -90,13 +158,13 @@ Resources:
         IamFleetRole: !GetAtt SeleniumHubSpotFleetRole.Arn
         TargetCapacity: 1
         AllocationStrategy: 'lowestPrice'
-        SpotPrice: '0.5'
+        SpotPrice: !Ref SpotPrice
         LaunchSpecifications:
-          - ImageId: ami-b70554c8
-            InstanceType: t2.micro
-            KeyName: test
+          - ImageId: !Ref SeleniumHubInstanceImageId
+            InstanceType: !Ref SeleniumHubInstanceType
+            KeyName: !If [KeySpecified, !Ref KeyName, !Ref "AWS::NoValue"]
             Placement:
-              AvailabilityZone: "us-east-1a"
+              AvailabilityZone: !Ref AvailabilityZoneFull
             SecurityGroups:
               - GroupId: !GetAtt SeleniumSecurityGroupName.GroupId
             TagSpecifications:
@@ -107,19 +175,19 @@ Resources:
             IamInstanceProfile:
               Arn: !GetAtt SeleniumHubInstanceProfile.Arn  
             UserData:
-              Fn::Base64: |
+              Fn::Base64: !Sub |
                 #!/bin/bash
                 STACK_NAME="seleniumgridaws"
-                sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "us-east-1" 
+                sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "${AvailabilityZoneGeneral}" 
 
                  # Fetch Public IP of the Hub instance
                 HUB_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
-                STACK_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackId' --region "us-east-1" --output text)
+                STACK_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackId' --region "${AvailabilityZoneGeneral}" --output text)
                 STACK_ID=$(echo "$STACK_ARN" | awk -F'/' '{print $NF}')
 
-                aws ssm put-parameter --name "SeleniumHubPublicIP-$STACK_ID" --type "String" --value "$HUB_IP" --region "us-east-1" --overwrite
+                aws ssm put-parameter --name "SeleniumHubPublicIP-$STACK_ID" --type "String" --value "$HUB_IP" --region "${AvailabilityZoneGeneral}" --overwrite
 
-                sudo docker run -d -p 4442-4444:4442-4444 --name selenium-hub selenium/hub:latest
+                sudo docker run -d -p 4442-4444:4442-4444 --name selenium-hub --shm-size="${ShmSizeSeleniumHub}" selenium/hub:latest
 
   SeleniumNodesSpotFleetRole:
     Type: 'AWS::IAM::Role'
@@ -158,15 +226,15 @@ Resources:
     Properties:
       SpotFleetRequestConfigData:
         IamFleetRole: !GetAtt SeleniumNodesSpotFleetRole.Arn
-        TargetCapacity: 3  # Adjust the number of nodes as needed
+        TargetCapacity: !Ref NodeFleetCapacity
         AllocationStrategy: 'lowestPrice'
-        SpotPrice: '0.5'
+        SpotPrice: !Ref SpotPrice
         LaunchSpecifications:
-          - ImageId: ami-b70554c8
-            InstanceType: t2.micro
-            KeyName: test
+          - ImageId: !Ref SeleniumNodeImageId
+            InstanceType: !Ref SeleniumNodeInstanceType
+            KeyName: !If [KeySpecified, !Ref KeyName, !Ref "AWS::NoValue"]
             Placement:
-              AvailabilityZone: "us-east-1a"
+              AvailabilityZone: !Ref AvailabilityZoneFull
             SecurityGroups:
               - GroupId: !GetAtt SeleniumSecurityGroupName.GroupId
             TagSpecifications:
@@ -177,34 +245,34 @@ Resources:
             IamInstanceProfile:
               Arn: !GetAtt SeleniumNodesInstanceProfile.Arn  
             UserData:
-              Fn::Base64: |
+              Fn::Base64: !Sub |
                 #!/bin/bash
                 STACK_NAME="seleniumgridaws"
-                sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "us-east-1"  
+                sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "${AvailabilityZoneGeneral}"  
 
                 NODE_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
 
-                STACK_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackId' --region "us-east-1" --output text)
+                STACK_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackId' --region "${AvailabilityZoneGeneral}" --output text)
                 STACK_ID=$(echo "$STACK_ARN" | awk -F'/' '{print $NF}')
 
                 sleep 30
 
-                RECEIVED_HUB_IP=$(aws ssm get-parameter --name "SeleniumHubPublicIP-$STACK_ID" --query "Parameter.Value" --region "us-east-1" --output text)
+                RECEIVED_HUB_IP=$(aws ssm get-parameter --name "SeleniumHubPublicIP-$STACK_ID" --query "Parameter.Value" --region "${AvailabilityZoneGeneral}" --output text)
                 FORMATTED_HUB_IP="http://$RECEIVED_HUB_IP:4444"
 
                 sudo docker run -d --name chrome-node -p 5555:5555 \
-                --shm-size="2g" \
+                --shm-size="${ShmSizeSeleniumNode}" \
                 -e SE_EVENT_BUS_HOST=$RECEIVED_HUB_IP \
                 -e SE_NODE_GRID_URL=$FORMATTED_HUB_IP \
                 -e SE_EVENT_BUS_PUBLISH_PORT=4442 \
                 -e SE_EVENT_BUS_SUBSCRIBE_PORT=4443 \
-                -e SE_NODE_MAX_INSTANCES=1 \
-                -e SE_NODE_MAX_SESSIONS=4 \
+                -e SE_NODE_MAX_INSTANCES=${MaxNodeInstances} \
+                -e SE_NODE_MAX_SESSIONS=${MaxNodeSessions} \
                 -e SE_NODE_OVERRIDE_MAX_SESSIONS=true \
                 -e SE_NODE_SESSION_TIMEOUT=60 \
                 -e SE_VNC_NO_PASSWORD=1 \
                 -e SE_NODE_HOST=$NODE_IP \
-                selenium/node-chrome:latest
+                selenium/node-chrome:${NodeChromeVersion}
 
 Outputs:
   SeleniumHubSpotFleetRoleId:
