@@ -30,9 +30,6 @@ First, configure your AWS account with `aws-cli`. This is necessary for running 
 Avarage time for creation ~ 5-6 min
 
 
-
-### Clean-up Section
-```markdown
 ## Clean-up
 
 To delete the AWS Stack and all associated resources, use the following command:
