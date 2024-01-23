@@ -7,7 +7,7 @@ Parameters:
     AllowedPattern: '.+'
     ConstraintDescription: Vpc Id parameter can't be empty
   KeyName:
-    Type: String
+    Type: AWS::EC2::KeyPair::KeyName
     Default: ''
     Description: Key Pair name fo ssh acces to instances
   AvailabilityZoneFull:

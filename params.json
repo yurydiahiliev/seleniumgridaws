@@ -49,7 +49,7 @@
     },
     {
         "ParameterKey": "NodeFleetCapacity",
-        "ParameterValue": "5"
+        "ParameterValue": "1"
     },
     {
         "ParameterKey": "MaxNodeInstances",
