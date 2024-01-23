@@ -18,6 +18,8 @@ Enter to your AWS Account using `aws-cli` tool to be able to run AWS modules
 
 Or you can use custom fast line URL for stack creation:
 
+Region name | Region code | Launch
+--- | --- | ---
 US East (N. Virginia) | us-east-1 | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review
    ?templateURL=https://cf-templates-1lfo03l9lq9gl-us-east-1.s3.amazonaws.com/2024-01-23T101248.725Z7qa-cloudformation-selenium-grid.yml
    &stackName=seleniumgridaws
