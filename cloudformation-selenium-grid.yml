@@ -2,6 +2,10 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Selenium Grid Setup on AWS with separate Spot Fleets for Hub and Nodes
 
 Parameters:
+  StackName:
+    Type: String
+    Default: 'seleniumgridaws'
+    Description: Stack name
   VpcId:
     Type: AWS::EC2::VPC::Id
     AllowedPattern: '.+'
@@ -177,7 +181,7 @@ Resources:
             UserData:
               Fn::Base64: !Sub |
                 #!/bin/bash
-                STACK_NAME="seleniumgridaws"
+                STACK_NAME="${StackName}"
                 sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "${AvailabilityZoneGeneral}" 
 
                  # Fetch Public IP of the Hub instance
@@ -247,7 +251,7 @@ Resources:
             UserData:
               Fn::Base64: !Sub |
                 #!/bin/bash
-                STACK_NAME="seleniumgridaws"
+                STACK_NAME="${StackName}"
                 sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "${AvailabilityZoneGeneral}"  
 
                 NODE_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)

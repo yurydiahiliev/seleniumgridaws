@@ -1,5 +1,9 @@
 [
     {
+        "ParameterKey": "StackName",
+        "ParameterValue": "seleniumgridaws"
+    },
+    {
         "ParameterKey": "VpcId",
         "ParameterValue": "vpc-05322bf757c9b2f06"
     },
