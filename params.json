@@ -62,5 +62,9 @@
     {
         "ParameterKey": "MaxNodeSessions",
         "ParameterValue": "1"
+    },
+    {
+        "ParameterKey": "AutoscaleSpotInstance",
+        "ParameterValue": "No"
     }
 ]

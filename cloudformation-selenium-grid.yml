@@ -41,7 +41,7 @@ Parameters:
   SpotPrice:
     Type: String
     Default: '0.5'
-    Description: Choose Selenium Chrome Node instance type
+    Description: Maximum price per hour for Spot Instances (e.g., '0.05', '0.5').
   ShmSizeSeleniumHub:
     Type: String
     Default: 2g
@@ -58,20 +58,29 @@ Parameters:
     Type: Number
     Default: 1
     MinValue: 1
-    Description: AWS Spot Fleet capacity  
+    Description: Capacity for AWS Spot Fleet for nodes. 
   MaxNodeInstances:
     Type: Number
     Default: 1
     MinValue: 1
-    Description: Choose Selenium Chrome Node instance type
+    Description: Maximum number of instances per node.
   MaxNodeSessions:
     Type: Number
     Default: 1
     MinValue: 1
-    Description: Choose Selenium Chrome Node instance type 
+    Description: Maximum number of sessions per node.
+  AutoscaleSpotInstance:
+    Type: String
+    Default: 'No'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Description: Enable auto-scaling for Spot Instances (Yes/No).     
 
 Conditions:                          
   KeySpecified: !Not [ !Equals [ !Ref KeyName, "" ]]
+  UseSpotInstance: !Equals [!Ref AutoscaleSpotInstance, 'No']
+  UseAutoscaleSpotInstance: !Equals [!Ref AutoscaleSpotInstance, 'Yes']
 
 Resources:
   SeleniumSecurityGroupName:
@@ -223,60 +232,98 @@ Resources:
     Type: "AWS::IAM::InstanceProfile"
     Properties: 
       Roles: 
-        - !Ref SeleniumNodesSpotFleetRole              
+        - !Ref SeleniumNodesSpotFleetRole
+
+  SeleniumNodeLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties: 
+      LaunchTemplateData:
+        ImageId: !Ref SeleniumNodeImageId
+        InstanceType: !Ref SeleniumNodeInstanceType
+        KeyName: !If [KeySpecified, !Ref KeyName, !Ref "AWS::NoValue"]
+        Placement:
+            AvailabilityZone: !Ref AvailabilityZoneFull
+        SecurityGroupIds:
+          - !GetAtt SeleniumSecurityGroupName.GroupId
+        TagSpecifications:
+          - ResourceType: 'instance'
+            Tags:
+              - Key: Name
+                Value: !Join ["-", ["selenium-node-spot", !Select [2, !Split ["/", !Ref AWS::StackId]]]]  
+        IamInstanceProfile:
+          Arn: !GetAtt SeleniumNodesInstanceProfile.Arn
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+           
+            STACK_NAME="${StackName}"
+            sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "${AvailabilityZoneGeneral}"  
+
+            NODE_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
+
+            STACK_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackId' --region "${AvailabilityZoneGeneral}" --output text)
+            STACK_ID=$(echo "$STACK_ARN" | awk -F'/' '{print $NF}')
+
+            sleep 30
+
+            RECEIVED_HUB_IP=$(aws ssm get-parameter --name "SeleniumHubPublicIP-$STACK_ID" --query "Parameter.Value" --region "${AvailabilityZoneGeneral}" --output text)
+            FORMATTED_HUB_IP="http://$RECEIVED_HUB_IP:4444"
+
+            sudo docker run -d --name chrome-node -p 5555:5555 \
+            --shm-size="${ShmSizeSeleniumNode}" \
+            -e SE_EVENT_BUS_HOST=$RECEIVED_HUB_IP \
+            -e SE_NODE_GRID_URL=$FORMATTED_HUB_IP \
+            -e SE_EVENT_BUS_PUBLISH_PORT=4442 \
+            -e SE_EVENT_BUS_SUBSCRIBE_PORT=4443 \
+            -e SE_NODE_MAX_INSTANCES=${MaxNodeInstances} \
+            -e SE_NODE_MAX_SESSIONS=${MaxNodeSessions} \
+            -e SE_NODE_OVERRIDE_MAX_SESSIONS=true \
+            -e SE_NODE_SESSION_TIMEOUT=60 \
+            -e SE_VNC_NO_PASSWORD=1 \
+            -e SE_NODE_HOST=$NODE_IP \
+            selenium/node-chrome:${NodeChromeVersion}                    
 
   SeleniumNodesSpotFleet:
     Type: 'AWS::EC2::SpotFleet'
+    Condition: UseSpotInstance
     Properties:
       SpotFleetRequestConfigData:
         IamFleetRole: !GetAtt SeleniumNodesSpotFleetRole.Arn
         TargetCapacity: !Ref NodeFleetCapacity
         AllocationStrategy: 'lowestPrice'
         SpotPrice: !Ref SpotPrice
-        LaunchSpecifications:
-          - ImageId: !Ref SeleniumNodeImageId
-            InstanceType: !Ref SeleniumNodeInstanceType
-            KeyName: !If [KeySpecified, !Ref KeyName, !Ref "AWS::NoValue"]
-            Placement:
-              AvailabilityZone: !Ref AvailabilityZoneFull
-            SecurityGroups:
-              - GroupId: !GetAtt SeleniumSecurityGroupName.GroupId
-            TagSpecifications:
-              - ResourceType: 'instance'
-                Tags:
-                  - Key: Name
-                    Value: !Join ["-", ["selenium-node-spot", !Select [2, !Split ["/", !Ref AWS::StackId]]]]     
-            IamInstanceProfile:
-              Arn: !GetAtt SeleniumNodesInstanceProfile.Arn  
-            UserData:
-              Fn::Base64: !Sub |
-                #!/bin/bash
-                STACK_NAME="${StackName}"
-                sudo /opt/aws/bin/cfn-init -v --stack $STACK_NAME --resource SeleniumSecurityGroupName --configsets default --region "${AvailabilityZoneGeneral}"  
+        LaunchTemplateConfigs:
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref SeleniumNodeLaunchTemplate
+              Version: !GetAtt SeleniumNodeLaunchTemplate.LatestVersionNumber
+            Overrides:
+              - InstanceType: !Ref SeleniumNodeInstanceType
+                AvailabilityZone: !Ref AvailabilityZoneFull
 
-                NODE_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
-
-                STACK_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackId' --region "${AvailabilityZoneGeneral}" --output text)
-                STACK_ID=$(echo "$STACK_ARN" | awk -F'/' '{print $NF}')
-
-                sleep 30
-
-                RECEIVED_HUB_IP=$(aws ssm get-parameter --name "SeleniumHubPublicIP-$STACK_ID" --query "Parameter.Value" --region "${AvailabilityZoneGeneral}" --output text)
-                FORMATTED_HUB_IP="http://$RECEIVED_HUB_IP:4444"
-
-                sudo docker run -d --name chrome-node -p 5555:5555 \
-                --shm-size="${ShmSizeSeleniumNode}" \
-                -e SE_EVENT_BUS_HOST=$RECEIVED_HUB_IP \
-                -e SE_NODE_GRID_URL=$FORMATTED_HUB_IP \
-                -e SE_EVENT_BUS_PUBLISH_PORT=4442 \
-                -e SE_EVENT_BUS_SUBSCRIBE_PORT=4443 \
-                -e SE_NODE_MAX_INSTANCES=${MaxNodeInstances} \
-                -e SE_NODE_MAX_SESSIONS=${MaxNodeSessions} \
-                -e SE_NODE_OVERRIDE_MAX_SESSIONS=true \
-                -e SE_NODE_SESSION_TIMEOUT=60 \
-                -e SE_VNC_NO_PASSWORD=1 \
-                -e SE_NODE_HOST=$NODE_IP \
-                selenium/node-chrome:${NodeChromeVersion}
+  SeleniumNodesAutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Condition: UseAutoscaleSpotInstance
+    Properties: 
+      MaxSize: !Ref NodeFleetCapacity
+      MinSize: 1
+      DesiredCapacity: !Ref NodeFleetCapacity
+      AvailabilityZones: [ !Ref AvailabilityZoneFull ] 
+      MixedInstancesPolicy: 
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateId: !Ref SeleniumNodeLaunchTemplate
+            Version: !GetAtt SeleniumNodeLaunchTemplate.LatestVersionNumber
+          Overrides:
+            - InstanceType: !Ref SeleniumNodeInstanceType
+        InstancesDistribution:
+          SpotAllocationStrategy: "lowest-price"
+          SpotMaxPrice: !Ref SpotPrice
+      HealthCheckGracePeriod: 300
+      HealthCheckType: "EC2"
+      Tags:
+        - Key: "Name"
+          Value: !Join ["-", ["selenium-node-spot-autoscaled", !Select [2, !Split ["/", !Ref AWS::StackId]]]] 
+          PropagateAtLaunch: true
 
 Outputs:
   SeleniumHubSpotFleetRoleId:
@@ -285,3 +332,7 @@ Outputs:
   SeleniumNodesSpotFleetRoleId:
     Description: The ID of the Spot Fleet Role for Selenium Nodes
     Value: !GetAtt SeleniumNodesSpotFleetRole.Arn
+  SeleniumNodeAutoScalingGroup:
+    Description: "Auto Scaling Group for Selenium Nodes"
+    Value: !Ref SeleniumNodesAutoScalingGroup
+    Condition: UseAutoscaleSpotInstance
